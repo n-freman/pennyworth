@@ -1,8 +1,16 @@
+import logging
+
+print('[Importing libs...]')
 import torch
 import pyaudio
 import numpy as np
+from datasets import load_dataset
+print('[Progress 70%]')
 from transformers import pipeline
 from transformers import VitsModel, AutoTokenizer
+print('[Importing finsihed...]')
+
+logging.basicConfig(level=logging.INFO)
 
 # Initialize Whisper model
 whisper_model = pipeline("automatic-speech-recognition",
@@ -10,8 +18,11 @@ whisper_model = pipeline("automatic-speech-recognition",
                          generate_kwargs={"language": "en"})
 
 mms_model = pipeline("text-to-speech",
-                     model="facebook/mms-tts-eng")
-
+                     model="microsoft/speecht5_tts")
+embeddings_dataset = load_dataset("Matthijs/cmu-arctic-xvectors",
+                                  split="validation",
+                                  trust_remote_code=True)
+speaker_embedding = torch.tensor(embeddings_dataset[7306]["xvector"]).unsqueeze(0)
 
 # Audio stream config
 FORMAT = pyaudio.paInt16
@@ -50,15 +61,12 @@ try:
 
             if len(text) <= 3:
                 continue
-            print('Synthesizing voice...')
-            
-            result = mms_model(text)
-
-            voice_stream = audio.open(rate=int(result['sampling_rate'] * 0.9), # type: ignore
+            result = mms_model(text, forward_params={"speaker_embeddings": speaker_embedding})
+            voice_stream = audio.open(rate=result['sampling_rate'], # type: ignore
                                       channels=1,
                                       format=pyaudio.paFloat32,
                                       output=True)
-            voice_stream.write(result['audio'].tobytes()) # type: ignore
+            voice_stream.write((result['audio']).tobytes()) # type: ignore
             voice_stream.stop_stream()
             voice_stream.close()
             print('Finished voice synthesis.')
